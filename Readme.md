@@ -1,5 +1,5 @@
 # Joint Inverse Medium and Optimal Control Problem for Acoustic Waves
-This is the code to the paper (Joint inverse medium and optimal control problem for acoustic waves)[https://doi.org/10.1145/3324989.3325718] (PASC 19).
+This is the code to the paper [Joint inverse medium and optimal control problem for acoustic waves](https://doi.org/10.1145/3324989.3325718) (PASC 19).
 
 
 
@@ -14,4 +14,4 @@ Parameters used in the paper:
 GaussNewton	10
 CGMethod	3
 
-(Freefem)[https://freefem.org/]
+[Freefem](https://freefem.org/)
