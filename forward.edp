@@ -1,0 +1,115 @@
+func ftrue1 =  0.5*(x>=0.65 && x<=0.85 && y>=0.65 && y<=0.85);
+func ftrue2 = (x>=0.25 && x<=0.45 && y>=0.65 && y<=0.85);//((y-.75)^2+(x-.35)^2)<=.1^2; //
+
+
+func utrue = 1+0.5*(((x-.5)/0.4)^2+((y-.35)/.2)^2<=1)+0.5*(y>=0.1&&y<=0.6);
+
+
+// func u1 =  1+0.5*(y<=.75)-.25*(((x-.5)/0.4)^2+((y-.35)/.3)^2<=1);
+// func u2 =  ((x>=0.45 && x <= 0.55 &&   y >= 0.45 ));
+// func utrue = u1*(u2==0)+1.75*u2;
+func mic   =  x == 0 || y == 0 || x == 1 || y == 1;
+
+
+int NN = 100;
+int[int] l1111 = [1,1,1,1];
+//mesh Th = square(NN, NN, label=l1111);
+
+
+border out11(t=0,1){x = 0;         y = 0.1*t;        label = 1;}
+border out12(t=0,1){x = 0;         y = 0.1+0.5*t;        label = 1;}
+border out13(t=0,1){x = 0;         y = 0.6+0.4*t;        label = 1;}
+border out2(t=0,1){x = t;         y = 1;        label = 1;}
+border out3(t=0,1){x = 1;       y = 1-t;        label = 1;}
+border out4(t=0,1){x = 1-t;       y = 0;        label = 1;}
+
+
+border f11(t=0,1){x=0.65+0.2*t;  y = 0.65;       label = 0;};
+border f12(t=0,1){x=0.85;        y = 0.65+0.2*t; label = 0;};
+border f13(t=0,1){x=0.85-0.2*t;  y = 0.85;       label = 0;};
+border f14(t=0,1){x=0.65;        y = 0.85-0.2*t; label = 0;};
+
+
+border f21(t=0,1){x=0.25+0.2*t;  y = 0.65;       label = 0;};
+border f22(t=0,1){x=0.45;        y = 0.65+0.2*t; label = 0;};
+border f23(t=0,1){x=0.45-0.2*t;  y = 0.85;       label = 0;};
+border f24(t=0,1){x=0.25;        y = 0.85-0.2*t; label = 0;};
+
+
+
+ border u1(t=0,2*pi) { x = 0.4 * cos(t) + .5; y = 0.2*sin(t)+.35; label = 0;}
+ border u2(t=0,1)    { y = 0.1; x = t; label = 0;}
+ border u3(t=0,1)    { y = 0.6; x = t; label = 0;}
+
+
+ mesh Th = buildmesh(out11(-0.1*NN)+out12(-0.5*NN)+out13(-0.6*NN)+out2(-NN)+out3(-NN)+out4(-NN)+
+                     f11(0.2*NN)+f12(0.2*NN)+f13(0.2*NN)+f14(0.2*NN)+
+                     f21(0.2*NN)+f22(0.2*NN)+f23(0.2*NN)+f24(0.2*NN)+
+                     u1(2*NN)+u2(-NN)+u3(-NN)
+);
+ // plot(Th);
+
+fespace Vh(Th, P1);
+include "./functions.edp"
+for (int N = 100; N<=200; N=N+100){
+
+    cout << N << endl;
+    Th =  buildmesh(out11(-0.1*NN)+out12(-0.5*NN)+out13(-0.6*NN)+out2(-NN)+out3(-NN)+out4(-NN)+
+                     f11(0.2*NN)+f12(0.2*NN)+f13(0.2*NN)+f14(0.2*NN)+
+                     f21(0.2*NN)+f22(0.2*NN)+f23(0.2*NN)+f24(0.2*NN)+
+                     u1(2*NN)+u2(-NN)+u3(-NN)
+);
+
+
+
+    Vh ft1 = ftrue1;
+    Vh ft2 = ftrue2;
+    Vh ut = utrue;
+    Vh Mic = mic;
+
+//    plot(ft,wait=1);
+//    plot(ut,wait=1);
+
+    Vh vh = ut+ft1+ft2;
+ //  plot(vh);
+
+
+    include "./functions.edp"
+
+//     matrix P = createP(Mic[]);
+
+    matrix K = createStiffnessMatrix(ut[]);
+    matrix M = createMassMatrix();
+    matrix B = createBoundaryMatrix(ut[]);
+
+    real[int] FfTrue1 = createLoadVector(ft1[]);
+    real[int] FfTrue2 = createLoadVector(ft2[]);
+
+
+    for (real omega = 8; omega <= 100; omega=omega+2){
+
+        cout << "N = " << N << "; omega = " << omega << endl;
+        matrix A = createA(K,M,B,omega);
+        real[int] waveTrueA1 = waveSolver(A,FfTrue1);
+        real[int] waveTrueA2 = waveSolver(A,FfTrue2);
+//         real[int] waveTrue = P*waveTrueA;
+
+        Vh wh,fh;
+        wh[] = waveTrueA1(0:wh.n);
+        // plot(wh);
+//         wh[] = waveTrueA2(0:wh.n);
+//         plot(wh,wait=1);
+//         wh[] = waveTrueA1(wh.n:2*wh.n);
+//         plot(wh,wait=1);
+//         wh[] = waveTrueA2(wh.n:2*wh.n);
+//         plot(wh,wait=1);
+
+        ofstream file1("waveTrue/wave_"+N+"_"+omega+"_1.txt");
+        file1 << waveTrueA1 << endl;
+        ofstream file2("waveTrue/wave_"+N+"_"+omega+"_2.txt");
+        file2 << waveTrueA2 << endl;
+    }
+
+
+
+}

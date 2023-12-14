@@ -1,0 +1,2 @@
+GaussNewton	10
+CGMethod	3

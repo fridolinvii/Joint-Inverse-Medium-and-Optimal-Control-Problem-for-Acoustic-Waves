@@ -1,0 +1,102 @@
+func ftrue1 =  0.5*(x>=0.65 && x<=0.85 && y>=0.65 && y<=0.85);
+func ftrue2 = (x>=0.25 && x<=0.45 && y>=0.65 && y<=0.85);//((y-.75)^2+(x-.35)^2)<=.1^2;
+//func ftrue2 = y>=0.6 &&  (y<=((x-0.25)+0.6)) && x>=0.25 && x<=0.5;
+func utrue = 1+0.5*(((x-.5)/0.4)^2+((y-.35)/.2)^2<=1)+0.5*(y>=0.1&&y<=0.6);
+
+
+
+int NN = 100;
+int[int] l1111 = [1,1,1,1];
+int l1 = 1;
+mesh Th = square(NN, NN, label=l1111);
+fespace Vh(Th, P1);
+include "./functions.edp"
+
+
+
+
+
+Vh Mic = x ==  0 || y == 0 || x == 1 || y == 1;
+
+Vh ft1 = ftrue1;
+Vh ft2 = ftrue2;
+Vh ut = utrue;
+
+
+ real[int] uu = ut[];   //uu(0) = 0;
+ real[int] ff1 = ft1[]; //ff1(0) = 1;
+ real[int] ff2 = ft2[]; //ff2(0) = 1;
+
+
+
+ ofstream fileut("approx_K/utrue_"+NN+".txt");
+          fileut << uu << endl;
+          
+ ofstream fileft1("approx_K/ftrue1_"+NN+".txt");
+          fileft1 << ff1 << endl;
+ ofstream fileft2("approx_K/ftrue2_"+NN+".txt");
+          fileft2 << ff2 << endl;  
+
+          
+          
+          
+Vh uui = 1;
+
+
+real[int] ur = ut[]-uui[];
+real erru = ur.l2/ut[].l2;
+cout << "error begining = " << erru << endl;
+
+
+// ft[](0) = 2;
+// ut[](0) = 0;
+plot(ft1,wait=1);
+plot(ft2,wait=1);
+plot(ut,wait=1);
+
+
+for (int K1 = 1; K1<2; K1++){
+for (int K2 = 1; K2<2; K2++){
+    
+for (int KK = 1; KK<=4; KK+=1){
+    if (KK == 7){
+        KK = 1;
+}
+     for (real omega = 50; omega<=50; omega = omega+50){
+//    for (real omega = 50; omega<=100; omega = omega+51){
+        Vh uh,fh1,fh2;
+        ifstream fileuh("approx_K/uh_"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+".txt");
+        fileuh >> uh[];
+        ifstream filefh1("approx_K/fh1_"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+".txt");
+        filefh1 >> fh1[];
+        ifstream filefh2("approx_K/fh2_"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+".txt");
+        filefh2 >> fh2[];
+        
+        
+        
+        cout << "K = " << KK <<"; K1 = " << K1 <<"; K2 = " << K2 << "; omega = " << omega << endl;
+        plot(uh,wait=1,fill = 1, value = 1);
+        plot(fh1,wait=1,fill = 1, value = 1);
+        plot(fh2,wait=1,fill = 1, value = 1);
+        
+        
+        real[int] diffu = ut[]-uh[];
+        real[int] difff1 = ft1[]-fh1[];
+        real[int] difff2 = ft2[]-fh2[];
+        real errorf1 = difff1.l2/ft1[].l2;
+        real errorf2 = difff2.l2/ft2[].l2;
+        real erroru = diffu.l2/ut[].l2;
+        cout << "error u = " << erroru <<"; error f1 = " << errorf1 <<"; error f2 = " << errorf2 << endl;
+        
+        
+        
+        
+        
+    }
+//     real[int] timeK(7);
+//     ifstream filetimeK("approx_K/timeK"+KK+"_"+NN+".txt");
+//     filetimeK >> timeK;
+//     
+//     cout << timeK << endl;
+}
+}}

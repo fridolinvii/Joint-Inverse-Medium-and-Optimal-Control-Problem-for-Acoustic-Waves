@@ -1,0 +1,307 @@
+/* Remark: This is the convergence Test.
+      This ensures, that the forward problem is done correctly.
+      The error has to decrease quadratically.
+*/
+
+
+
+real KK = 4;
+real omega = 20;  // frequency
+
+
+// ftrue1 and ftrue2 are the sources
+// utrue is the medium
+func ftrue1 =  0.5*(x>=0.65 && x<=0.85 && y>=0.65 && y<=0.85);
+func ftrue2 = y>=0.6 &&  (y<=((x-0.25)+0.6)) && x>=0.25 && x<=0.5;
+func utrue = 1+0.5*(((x-.5)/0.4)^2+((y-.35)/.2)^2<=1)+0.5*(y>=0.1&&y<=0.6);
+
+// microphones are on the boundary
+func mic   =  x == 0 || y == 0 || x == 1 || y == 1;
+
+
+int NN = 150;
+int[int] l1111 = [1,1,1,1];
+int l1 = 1;
+mesh Th = square(NN, NN, label=l1111);
+fespace Vh(Th, P1);
+include "./functions.edp"
+
+
+
+
+Vh ft1 = ftrue1;
+Vh ft2 = ftrue2;
+Vh ut = utrue;
+
+
+Vh fh1 = 0;
+Vh fh2 = 0;
+Vh uh =  1;
+
+
+// shows the 2 sources ft1, ft2 and the medium
+Vh ft = ft1+ft2+ut;
+plot(ft,wait=1);
+
+////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////
+//////////// calculate true wave //////////////////////////////////
+
+
+Vh Mic = mic;
+int n = Vh.ndof;
+// plot(Mic,wait=1);
+matrix Pt; Pt = createP(Mic[]);
+
+real[int] u = ut[];
+matrix K = createStiffnessMatrix(u);
+matrix M = createMassMatrix();
+matrix B = createBoundaryMatrix(u);
+matrix A = createA(K,M,B,omega);
+
+real[int] Ff1 = createLoadVector(ft1[]);
+real[int] Ff2 = createLoadVector(ft2[]);
+
+
+real[int] waveTrueA1 = waveSolver(A,Ff1);
+real[int] waveTrue1 = Pt*waveTrueA1;
+real[int] waveTrueA2 = waveSolver(A,Ff2);
+real[int] waveTrue2 = Pt*waveTrueA2;
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////// ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+// find Eigenspace
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int nev = KK*omega;
+    real e = 1e-6;
+    real[int] ev(nev);  Vh[int] eV(nev);
+    real[int] u00 = createU0(ut[], ut[], l1);
+    matrix MEV = createAEMatrix(ut[], l1);
+
+    real[int] ones(u00.n); ones = 1;
+    matrix E = ones;
+    set(E,solver = sparsesolver);
+
+    set(MEV,solver = sparsesolver);
+    int k = EigenValue(MEV,E,sym=true,sigma=0,value=ev,vector=eV,tol=1e-11,maxit=0,ncv=0);
+
+    real[int,int] MM(eV[0][].n,nev);
+    for (int l = 0; l<nev; l++){
+        MM(:,l) = eV[l][];
+//         plot(eV[l],wait=1);
+    }
+
+
+    matrix meV = MM;
+
+
+
+
+    real[int] evf1(nev);  Vh[int] eVf1(nev);
+    real[int] f001 = createU0(ft1[], ft1[], l1);
+    matrix MEVf1 = createAEMatrix(ft1[], l1);
+
+
+    set(MEVf1,solver = sparsesolver);
+    int kf1 = EigenValue(MEVf1,E,sym=true,sigma=0,value=evf1,vector=eVf1,tol=1e-11,maxit=0,ncv=0);
+
+    real[int,int] MMf1(eVf1[0][].n,nev);
+    for (int l = 0; l<nev; l++){
+        MMf1(:,l) = eVf1[l][];
+//         plot(eV[l],wait=1);
+    }
+
+
+    matrix meVf1 = MMf1;
+
+
+
+
+
+
+    real[int] evf2(nev);  Vh[int] eVf2(nev);
+    real[int] f002 = createU0(ft2[], ft2[], l1);
+    matrix MEVf2 = createAEMatrix(ft2[], l1);
+
+
+    set(MEVf2,solver = sparsesolver);
+    int kf2 = EigenValue(MEVf2,E,sym=true,sigma=0,value=evf2,vector=eVf2,tol=1e-11,maxit=0,ncv=0);
+
+    real[int,int] MMf2(eVf2[0][].n,nev);
+    for (int l = 0; l<nev; l++){
+        MMf2(:,l) = eVf2[l][];
+//         plot(eV[l],wait=1);
+    }
+
+
+    matrix meVf2 =  MMf2;
+
+
+
+
+
+
+
+
+
+
+    real[int] betau =findBeta(u00,ut[], meV);
+    real[int] betaf1 =findBeta(f001,ft1[], meVf1);
+    real[int] betaf2 =findBeta(f002,ft2[], meVf2);
+
+
+    real[int] betaAE = createBetaTotal(betau,betaf1,betaf2);
+
+
+
+
+
+    Vh fAE1; fAE1[] = f001;
+    Vh fAE2; fAE2[] = f002;
+    Vh uAE; uAE[] = u00;
+
+    //plot(fAE,wait=1);
+    //plot(uAE,wait=1);
+
+    for (int l = 0; l<betaAE.n; l++){
+        if (l<betau.n){
+            uAE  = uAE + betaAE(l)*eV[l];
+        } else if (l<betau.n+betaf1.n) {
+            int l1 = l-betau.n;
+            fAE1 = fAE1 + betaAE(l)*eVf1[l1];
+        } else if (l<betau.n+betaf1.n+betaf2.n) {
+            int l1 = l-betau.n-betaf1.n;
+            fAE2 = fAE2 + betaAE(l)*eVf2[l1];
+        }
+    }
+
+
+
+//   plot(uAE,wait=1);
+//   plot(fAE1,wait=1);
+//   plot(fAE2,wait=1);
+//   plot(fAE3,wait=1);
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+real[int] Ffu1 = createLoadVector(fAE1[]);
+real[int] Ffu2 = createLoadVector(fAE2[]);
+
+
+
+
+matrix Ka = createStiffnessMatrix(uAE[]);
+matrix Ba = createBoundaryMatrix(uAE[]);
+matrix Aa = createA(Ka,M,Ba,omega);
+
+
+real[int] waveApproxA1 = waveSolver(Aa,Ffu1);
+real[int] waveApprox1 = Pt*waveApproxA1;
+real[int] waveApproxA2 = waveSolver(Aa,Ffu2);
+real[int] waveApprox2 = Pt*waveApproxA2;
+
+
+
+
+
+// Vh whA; whA[] = waveApproxA1(0:waveApproxA1.n/2);
+// plot(whA,wait=1);
+// whA[] = waveApproxA2(0:waveApproxA2.n/2);
+// plot(whA,wait=1);
+// whA[] = waveApproxA3(0:waveApproxA3.n/2);
+// plot(whA,wait=1);
+
+
+
+
+
+real[int] wavediff1 = waveDiff(waveApprox1,waveTrue1);
+real[int] wavediff2 = waveDiff(waveApprox2,waveTrue2);
+
+
+real F = solveF(wavediff1,wavediff2);
+// cout << F << endl;
+
+
+
+
+matrix G1 =  createG(uh[], waveApproxA1,omega);
+matrix G2 =  createG(uh[], waveApproxA2,omega);
+real[int] dF = solveDF( Aa,G1,G2, Pt,  wavediff1,wavediff2, meV, meVf1, meVf2);
+
+
+// cout << dF << endl;
+
+
+// calculate F(u+t)
+int NC = 10;
+real[int] error(NC);
+int nBeta = dF.n;
+
+// create random vector
+real[int] beta = betaAE;
+real[int]  t(nBeta);
+for(int j = 0; j<nBeta; j++){
+  t(j) = randreal1();
+}
+
+// cout << dF << endl;
+
+for(int i=0; i<NC; i++){
+    real[int] T = t/(10^(i+1));
+
+    real[int] betaAEN = beta +T;
+
+
+    Vh fAE1; fAE1[] = f001;
+    Vh fAE2; fAE2[] = f002;
+    Vh uAE; uAE[] = u00;
+
+    //plot(fAE,wait=1);
+    //plot(uAE,wait=1);
+
+    for (int l = 0; l<betaAEN.n; l++){
+        if (l<betau.n){
+            uAE  = uAE + betaAEN(l)*eV[l];
+        } else if (l<betau.n+betaf1.n) {
+            int l1 = l-betau.n;
+            fAE1 = fAE1 + betaAEN(l)*eVf1[l1];
+        } else if (l<betau.n+betaf1.n+betaf2.n) {
+            int l1 = l-betau.n-betaf1.n;
+            fAE2 = fAE2 + betaAEN(l)*eVf2[l1];
+        }
+    }
+
+//     cout << betaAEN << endl;
+
+
+
+    real[int] Ffu1 = createLoadVector(fAE1[]);
+    real[int] Ffu2 = createLoadVector(fAE2[]);
+    matrix K = createStiffnessMatrix(uAE[]);
+    matrix B = createBoundaryMatrix(uAE[]);
+    matrix A = createA(K,M,B,omega);
+    real[int] waveApproxA1 = waveSolver(A,Ffu1);
+    real[int] waveapprox1 = Pt*waveApproxA1;
+    real[int] waveApproxA2 = waveSolver(A,Ffu2);
+    real[int] waveapprox2 = Pt*waveApproxA2;
+    real[int] wave1 = waveDiff(waveapprox1,waveTrue1);
+    real[int] wave2 = waveDiff(waveapprox2,waveTrue2);
+    real Ft = solveF(wave1,wave2);
+
+
+    real err1 = (Ft-F);
+    real err2 = T'*dF;
+    cout  << "Ft = " << Ft << "; F = "<< F << endl;
+    real err3 =  err1-err2;
+    cout << "err1 = " << err1 << "; err2 = " << err2 << "; err3 = " << err3 << endl;
+    error(i) = abs(err3);
+
+}
+
+cout << error << endl;

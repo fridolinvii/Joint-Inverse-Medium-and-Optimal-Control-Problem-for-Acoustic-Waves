@@ -1,0 +1,409 @@
+macro Grad(u) [dx(u),dy(u)] EndMacro
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// create matrix A
+
+
+// K is Stiffnessmatrix
+// M is mass Matrix
+// B is boundary matrix
+func matrix createA(matrix & K, matrix & M, matrix & B, real & omega)
+{
+    matrix A1 = K+omega^2*M;
+    matrix mA1 = -A1;
+    matrix A2 =  1*omega*B;
+    matrix A = [ [A1, A2],[A2, mA1]];
+    return A;
+}
+
+
+
+func matrix createStiffnessMatrix(real[int] & u){
+    Vh v,w,uh;  uh[] = u;
+    varf stiffnessMatrix(v,w)
+            = int2d(Th)(uh^2*Grad(v)'*Grad(w));
+    matrix K = stiffnessMatrix(Vh,Vh);
+    return K;
+}
+
+
+
+func matrix createMassMatrix(){
+    Vh v,w;
+    varf massMatrix(v,w)
+        = int2d(Th)(-1*v*w);
+    matrix M = massMatrix(Vh,Vh);
+    return M;
+}
+
+func matrix createBoundaryMatrix(real[int] & u){
+    Vh v,w,uh;  uh[] = u;
+    varf boundaryMatrix(v,w)
+        = int1d(Th,1)(1*uh*v*w);
+    matrix B = boundaryMatrix(Vh,Vh);
+//     cout << B(10,10) << endl;
+    return B;
+}
+
+func real[int]  createLoadVector(real[int] & f){
+    real[int] Ff(2*f.n);
+    Ff(0:f.n-1) = f;
+    Ff(f.n:Ff.n) = 0;
+    return Ff;
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+func real[int] waveSolver(matrix & A, real[int] & Ff){
+    set(A,solver=sparsesolver);
+    real[int] wave = A^-1*Ff;
+    return wave;
+}
+
+
+
+func real solveF(real[int] & wave1,real[int] & wave2 ){
+    real F = .5*(wave1'*wave1);
+    F = F+.5*(wave2'*wave2);
+    return F;
+}
+
+
+func real[int] waveDiff(real[int] & wave1,real[int] & wave2){
+    real[int] diff = wave1-wave2;
+    return diff;
+}
+
+
+
+
+
+func matrix createP(real[int] & Mic){
+
+    Vh xh = x,yh = y,zh = z;
+
+    int N = Mic.sum;
+    real[int] xn(N), yn(N), zn(N);
+    real[int,int] Pv(2*N,2*Mic.n); Pv = 0;
+    int j = 0;
+    for (int i = 0; i<Mic.n; i++){
+        if (Mic(i)>0){
+            xn(j) = xh[](i);
+            yn(j) = yh[](i);
+            zn(j) = zh[](i);
+            Pv(j,i) = 1;
+            Pv(N+j,Mic.n+i) = 1;
+            j++;
+        }
+    }
+
+
+
+    matrix Pu; Pu = Pv;
+    return Pu;
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// calculate G (For the Jacobian J = A^-1*G);
+
+/* use for wave the calculated wave A^-1*Ff (everywhere, not nonly microphones) and NOT wavediff = waveapprox-wavetrue;*/
+func matrix createG(real[int] & u, real[int] & wave, real & omega){
+    Vh v,w,uh, vr,vi; uh[] = u;
+    vr[] = wave(0:wave.n/2-1); vi[] = wave(wave.n/2:wave.n-1);
+    varf createKr(v,w)
+            = int2d(Th)(2*uh*v*Grad(vr)'*Grad(w))
+              +int1d(Th,1)(omega*vi*w*v);
+    varf createKi(v,w)
+            = int2d(Th)(-2*uh*v*Grad(vi)'*Grad(w))
+              +int1d(Th,1)(omega*vr*w*v);
+
+    matrix Kr = createKr(Vh,Vh);
+    matrix Ki = createKi(Vh,Vh);
+    matrix G = [[Kr],[Ki]];
+//     G = -G;
+    return G;
+}
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+// Adaptive Eigenspace
+
+func real[int] createU0(real[int] & uu, real[int] & utrue, int & borderLabel){
+    real e = 1e-6;
+    Vh u,w, uh, ut; uh[] = uu; ut[] = utrue;
+    varf Matrix(u,w) = int2d(Th)(1/sqrt(dx(uh)^2+dy(uh)^2+e^2)*Grad(u)'*Grad(w)) +on(borderLabel,u=0);
+    matrix M0 = Matrix(Vh,Vh);
+    set(M0,solver = sparsesolver);
+    varf rhs(u,w) = on(borderLabel,u=ut); // We assume we know the boundary
+    real[int] RHS = rhs(0,Vh);
+    real[int] u00 = M0^-1*RHS;
+    return u00;
+}
+
+
+
+func matrix createAEMatrix(real[int] & uu, int & borderLabel){
+    real e = 1e-6;
+    Vh u,w, uh; uh[] = uu;
+    varf MatrixEV(u,w) = int2d(Th)(1/sqrt(dx(uh)^2+dy(uh)^2+e^2)*Grad(u)'*Grad(w)) +on(borderLabel,u=0);
+    matrix MEV = MatrixEV(Vh,Vh);
+
+    return MEV;
+}
+
+
+
+func real[int] findBeta(real[int] & Mic00, real[int] & Mic, matrix & meV){
+            real[int] micAE0 = Mic -Mic00;
+            matrix AE0 = meV'*meV;
+            real[int] micAE1 = meV'*micAE0;
+            //set(AE0, solver = CG);
+            set(AE0, solver = sparsesolver);
+            real[int] betaAE = AE0^-1*micAE1;
+//             set(meV, solver = sparsesolver);
+//             real[int] betaAE = meV^-1*micAE0;
+            return betaAE;
+        }
+
+
+func real[int] createBetaTotal(real[int] & betau, real[int] & betaf1,real[int] & betaf2){
+    real[int] betaTotal(betau.n+betaf1.n+betaf2.n);
+    betaTotal(0:betau.n-1) = betau;
+    betaTotal(betau.n:betaf1.n+betau.n-1) = betaf1;
+    betaTotal(betau.n+betaf1.n:betaf2.n+betaf1.n+betau.n-1) = betaf2;
+    return betaTotal;
+}
+
+
+
+
+
+///////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////
+
+
+func real[int] solveDF(matrix & A, matrix & G1, matrix & G2, matrix & P, real[int] & wavediff1, real[int] & wavediff2,matrix & meV, matrix & meVf1, matrix & meVf2){
+
+    matrix At = A';
+    set(At,solver=sparsesolver);
+
+    // medium u
+    real[int] dFa1 = P'*wavediff1;
+    real[int] dFb1 = At^-1*dFa1;
+    real[int] dFc1 = G1'*dFb1;
+    real[int] dFd1 = meV'*dFc1;
+    real[int] dFu = -dFd1;
+
+    real[int] dFa2 = P'*wavediff2;
+    real[int] dFb2 = At^-1*dFa2;
+    real[int] dFc2 = G2'*dFb2;
+    real[int] dFd2 = meV'*dFc2;
+    dFu = dFu-dFd2;
+
+
+    // source f
+    matrix Zero1 = 0*meVf1;
+    matrix M1 =  [[meVf1],[Zero1]];
+    matrix Zero2 = 0*meVf2;
+    matrix M2 =  [[meVf2],[Zero2]];
+
+    real[int] dFf1 = M1'*dFb1;
+    real[int] dFf2 = M2'*dFb2;
+
+
+
+    real[int] dF = createBetaTotal(dFu, dFf1, dFf2);
+
+
+    return dF;
+}
+
+
+
+// //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// CG-Method
+
+func real[int] Hp(matrix & A,matrix & G1,matrix & G2, matrix & P, real[int] & p, matrix & meV, matrix & meVf1, matrix & meVf2, real[int] & betau, real[int] & betaf1, real[int] & betaf2){
+
+    matrix At = A';
+    set(A,solver = sparsesolver);
+    set(At,solver = sparsesolver);
+
+
+    real[int] pu = p(0:betau.n-1);
+    real[int] pf1 = p(betau.n:betau.n+betaf1.n-1);
+    real[int] pf2 = p(betau.n+betaf1.n:betau.n+betaf1.n+betaf2.n-1);
+
+
+    // medium u
+
+    real[int] ss = meV*pu;
+    real[int] s0 = G1*ss;
+    real[int] s1 = A^-1*s0;
+    real[int] s2 = P*s1;
+    real[int] s3 = P'*s2;
+    real[int] s4 = At^-1*s3;
+    real[int] s5 = G1'*s4;
+    real[int] su = meV'*s5;
+
+    real[int] s02 = G2*ss;
+    real[int] s12 = A^-1*s02;
+    real[int] s22 = P*s12;
+    real[int] s32 = P'*s22;
+    real[int] s42 = At^-1*s32;
+    real[int] s52 = G2'*s42;
+    real[int] su2 = meV'*s52;
+
+    su = su+su2;
+
+
+
+    // source f
+    matrix Zero1 = 0*meVf1;
+    matrix M1 =  [[meVf1],[Zero1]];
+    matrix Zero2 = 0*meVf2;
+    matrix M2 =  [[meVf2],[Zero2]];
+
+
+    real[int] s0f1 = M1*pf1;
+    real[int] s1f1 = A^-1*s0f1;
+    real[int] s2f1 = P*s1f1;
+    real[int] s3f1 = P'*s2f1;
+    real[int] s4f1 = At^-1*s3f1;
+    real[int] sf1 = M1'*s4f1;
+
+    real[int] s0f2 = M2*pf2;
+    real[int] s1f2 = A^-1*s0f2;
+    real[int] s2f2 = P*s1f2;
+    real[int] s3f2 = P'*s2f2;
+    real[int] s4f2 = At^-1*s3f2;
+    real[int] sf2 = M2'*s4f2;
+
+    real[int] s = createBetaTotal(su, sf1, sf2);
+    return s;
+}
+
+func real[int] cgMethod(matrix & A, matrix & G1, matrix & G2, matrix & P, matrix & meV,matrix & meVf1,matrix & meVf2, real[int] & b, real[int] & xf,real & mu,real[int] & betau,real[int] & betaf1,real[int] & betaf2){
+    // x = dbeta
+    // b = -dF
+
+    real[int] x = xf;
+    real[int] Adb = Hp(A,G1, G2, P, x, meV, meVf1, meVf2,betau,betaf1,betaf2);
+    real[int] r = Adb - b;
+    real[int] p = -r;
+
+    real tol = 1e-10; //1e-3;
+    int maxIter = 3;
+
+    real rel = r.l2;
+    if (rel == 0){ rel = 1;}
+    int iter = -1;
+
+    while (iter++ < maxIter){
+        cout << "CG-Method: tol = " << r.l2/rel <<"; Iter = " << iter << endl;
+        // calculate H*p
+        real[int] Ap = Hp(A,G1,G2, P, p, meV, meVf1, meVf2,betau,betaf1,betaf2);
+        real alpha = r'*r; alpha /= p'*Ap;
+        x += alpha*p;
+        real[int] rold = r;
+        r += alpha*Ap;
+        real beta = r'*r; beta /= rold'*rold;
+        p = beta*p; p-=r;
+
+
+        //////////// Breakcondition //////////////
+        if (r.l2/rel < tol){
+            cout << "Tol Break CG-method" << endl;
+            break;
+        }
+        real[int] Hx = Hp(A,G1,G2,P, x, meV, meVf1, meVf2,betau,betaf1,betaf2);
+        real[int] stop = Hx-b;
+        if (b.l2!=0){
+        cout << stop.l2/b.l2 << " vs " << mu << endl;
+        }
+        if (stop.l2<=mu*b.l2){
+            cout << "mu Break CG-method" << endl;
+            break;
+        }
+    }
+    return x;
+}
+
+
+ /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Armijo
+func real Armijo(real[int] & u00,real[int] & f001,real[int] & f002, real[int] & betaAE, real[int] & DbetaAE,  matrix & Pt, real & F, matrix & M, real[int,int] & MM, real[int,int] & MMf1, real[int,int] & MMf2, real[int] & waveTrue1, real[int] & waveTrue2, real[int] & dF, real & omega,real[int] & betau, real[int] & betaf1,real[int] & betaf2){
+    real alpha = 1;
+    real beta = 0.1; real tau = 0.5;
+    real epsAlpha = 1e-2;
+    while(alpha>epsAlpha){
+
+        real[int] wu = u00;
+        real[int] wf1 = f001;
+        real[int] wf2 = f002;
+        real[int] betaAEN(betaAE.n);
+
+
+        for (int l = 0; l<betaAE.n; l++){
+            betaAEN(l) = alpha*DbetaAE(l)+betaAE(l);
+            if (l<betau.n){
+                wu  = wu + betaAEN(l)*MM(:,l);
+            } else if (l<betau.n+betaf1.n) {
+                int l1 = l-betau.n;
+                wf1 = wf1 + betaAEN(l)*MMf1(:,l1);
+            } else if (l<betau.n+betaf1.n+betaf2.n) {
+                int l1 = l-betau.n-betaf1.n;
+                wf2 = wf2 + betaAEN(l)*MMf2(:,l1);
+            }
+        }
+
+
+        matrix B = createBoundaryMatrix(wu);
+        matrix K = createStiffnessMatrix(wu);
+        matrix A = createA(K,M,B,omega);
+
+
+        real[int] Ff1 = createLoadVector(wf1);
+        real[int] Ff2 = createLoadVector(wf2);
+        set(A,solver = sparsesolver);
+        real[int] waveApproxA1 = waveSolver(A,Ff1);
+        real[int] waveApproxA2 = waveSolver(A,Ff2);
+
+        real[int] waveApprox1 = Pt*waveApproxA1;
+        real[int] waveApprox2 = Pt*waveApproxA2;
+
+        real[int] wavediff1 = waveDiff(waveApprox1,waveTrue1);
+        real[int] wavediff2 = waveDiff(waveApprox2,waveTrue2);
+
+
+        real Fa = solveF(wavediff1,wavediff2);
+        real dFa = dF'*betaAE;
+        if (Fa < (F+alpha*beta*dFa)){
+            break;
+        }
+        alpha = alpha*tau;
+
+
+
+
+	if (alpha<epsAlpha) {
+		alpha = 0;
+	}
+
+    }
+    cout << " alpha = " << alpha << endl;
+    return alpha;
+}

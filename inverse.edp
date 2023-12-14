@@ -1,0 +1,533 @@
+func ftrue1 =  0.5*(x>=0.65 && x<=0.85 && y>=0.65 && y<=0.85);
+func ftrue2 = (x>=0.25 && x<=0.45 && y>=0.65 && y<=0.85);//((y-.75)^2+(x-.35)^2)<=.1^2; //
+func utrue = 1+0.5*(((x-.5)/0.4)^2+((y-.35)/.2)^2<=1)+0.5*(y>=0.1&&y<=0.6);
+
+func mic   =  x == 0 || y == 0 || x == 1 || y == 1;
+
+
+
+
+border out11(t=0,1){x = 0;         y = 0.1*t;        label = 1;}
+border out12(t=0,1){x = 0;         y = 0.1+0.5*t;        label = 1;}
+border out13(t=0,1){x = 0;         y = 0.6+0.4*t;        label = 1;}
+border out2(t=0,1){x = t;         y = 1;        label = 1;}
+border out3(t=0,1){x = 1;       y = 1-t;        label = 1;}
+border out4(t=0,1){x = 1-t;       y = 0;        label = 1;}
+
+
+border f11(t=0,1){x=0.65+0.2*t;  y = 0.65;       label = 0;};
+border f12(t=0,1){x=0.85;        y = 0.65+0.2*t; label = 0;};
+border f13(t=0,1){x=0.85-0.2*t;  y = 0.85;       label = 0;};
+border f14(t=0,1){x=0.65;        y = 0.85-0.2*t; label = 0;};
+
+
+border f21(t=0,1){x=0.25+0.2*t;  y = 0.65;       label = 0;};
+border f22(t=0,1){x=0.45;        y = 0.65+0.2*t; label = 0;};
+border f23(t=0,1){x=0.45-0.2*t;  y = 0.85;       label = 0;};
+border f24(t=0,1){x=0.25;        y = 0.85-0.2*t; label = 0;};
+
+
+
+ border u1(t=0,2*pi) { x = 0.4 * cos(t) + .5; y = 0.2*sin(t)+.35; label = 0;}
+ border u2(t=0,1)    { y = 0.1; x = t; label = 0;}
+ border u3(t=0,1)    { y = 0.6; x = t; label = 0;}
+
+
+
+
+
+
+
+
+// int NN = 100;
+for (int NN = 100; NN<200; NN=NN+100){
+
+
+mesh ThObs = buildmesh(out11(-0.1*NN)+out12(-0.5*NN)+out13(-0.6*NN)+out2(-NN)+out3(-NN)+out4(-NN)+
+                     f11(0.2*NN)+f12(0.2*NN)+f13(0.2*NN)+f14(0.2*NN)+
+                     f21(0.2*NN)+f22(0.2*NN)+f23(0.2*NN)+f24(0.2*NN)+
+                     u1(2*NN)+u2(-NN)+u3(-NN)
+);
+fespace VhObs(ThObs, P1);
+
+
+int[int] l1111 = [1,1,1,1];
+int l1 = 1;
+mesh Th = square(NN, NN, label=l1111);
+fespace Vh(Th, P1);
+include "./functions.edp"
+
+
+
+Vh Mic = mic;
+Vh ft1 = ftrue1;
+Vh ft2 = ftrue2;
+Vh ut = utrue;
+
+
+
+matrix P; P = createP(Mic[]);
+matrix M = createMassMatrix();
+
+
+
+for (int K2 = 1; K2 < 2 ; K2++){
+    for (int K1 = 1; K1 < 2 ; K1++){
+
+
+
+
+
+real[int] timeK(7);
+int tk = 0;
+real[int,int] timeAEExpansion(7,100);
+real[int,int] timeAE(7,100);
+
+
+
+
+
+
+for (int KK = 1;KK<5; KK+=1){
+
+
+Vh fh1 = 0;
+Vh fh2 = 0;
+Vh uh = 1;
+
+// for (int KK = 4; KK<5; KK++){
+real cpuK = clock();
+int tO = 0;
+
+
+
+real OMEGA;
+if (NN==100) {
+OMEGA = 50;
+} else {
+OMEGA = 100;
+}
+
+for (real omega = 8; omega<=OMEGA; omega = omega+2){
+
+
+
+
+
+
+    real cpuI = clock();
+
+
+
+
+    //////////////////////////////////////////////////////////////////////////////////////
+    // Create EIGENSPACE //
+    // int nev = KK*omega //for old
+    int nev1;
+    int nev2;
+
+    if (KK == 1){
+        nev1 = omega*K1;
+        nev2 = K2*10;
+    } else if (KK==2){
+        nev1 = K1*10;
+        nev2 = K2*omega;
+    } else if (KK==3){
+        nev1 = K1*10;
+        nev2 = K2*10;
+    } else if (KK==4){
+        nev1 = K1*omega;
+        nev2 = K2*omega;
+    } else if (KK==5){
+	nev1 = 2*omega*K1;
+	nev2 = K2*10;
+    } else if (KK==6){
+	nev1 = 2*omega*K1;
+	nev2 = 2*omega*K2;
+    }
+
+    cout << "nev1 = " << nev1 <<"; nev2 = "<<nev2 << endl;
+
+    real[int] ev(nev1);  Vh[int] eV(nev1);
+    real[int] u00 = createU0(uh[], ut[], l1);
+    matrix MEV = createAEMatrix(uh[], l1);
+
+
+//     Vh uhh; uhh[] = u00;
+//     plot(uhh,wait=1);
+
+
+    real[int] ones(u00.n); ones = 1;
+    matrix E = ones;
+    set(E,solver = sparsesolver);
+
+    set(MEV,solver = sparsesolver);
+    int k = EigenValue(MEV,E,sym=true,sigma=0,value=ev,vector=eV,tol=1e-11,maxit=0,ncv=0);
+
+    real[int,int] MM(eV[0][].n,nev1);
+    for (int l = 0; l<nev1; l++){
+        MM(:,l) = eV[l][];
+//         plot(eV[l],wait=1);
+    }
+
+
+    matrix meV = MM;
+
+
+
+    real[int] evf1(nev2);  Vh[int] eVf1(nev2);
+    real[int] f001 = createU0(fh1[], ft1[], l1);
+    matrix MEVf1 = createAEMatrix(fh1[], l1);
+
+
+    set(MEVf1,solver = sparsesolver);
+    int kf1 = EigenValue(MEVf1,E,sym=true,sigma=0,value=evf1,vector=eVf1,tol=1e-11,maxit=0,ncv=0);
+
+    real[int,int] MMf1(eVf1[0][].n,nev2);
+    for (int l = 0; l<nev2; l++){
+        MMf1(:,l) = eVf1[l][];
+//         plot(eVf[l],wait=1);
+    }
+
+
+    matrix meVf1 = MMf1;
+
+
+
+
+
+
+    real[int] evf2(nev2);  Vh[int] eVf2(nev2);
+    real[int] f002 = createU0(fh2[], ft2[], l1);
+    matrix MEVf2 = createAEMatrix(fh2[], l1);
+
+
+    set(MEVf2,solver = sparsesolver);
+    int kf2 = EigenValue(MEVf2,E,sym=true,sigma=0,value=evf2,vector=eVf2,tol=1e-11,maxit=0,ncv=0);
+
+    real[int,int] MMf2(eVf2[0][].n,nev2);
+    for (int l = 0; l<nev2; l++){
+        MMf2(:,l) = eVf2[l][];
+//         plot(eVf[l],wait=1);
+    }
+
+
+    matrix meVf2 = MMf2;
+
+
+
+
+
+    real[int] betau =findBeta(u00,uh[], meV);
+    real[int] betaf1 =findBeta(f001,fh1[], meVf1);
+    real[int] betaf2 =findBeta(f002,fh2[], meVf2);
+
+
+//     betau = 1; betaf = 2;
+
+    real[int] betaAE = createBetaTotal(betau,betaf1,betaf2);
+
+
+
+    fh1[] = f001;
+    fh2[] = f002;
+    uh[] = u00;
+    //plot(fAE,wait=1);
+    //plot(uAE,wait=1);
+
+    for (int l = 0; l<betaAE.n; l++){
+        if (l<betau.n){
+            uh  = uh + betaAE(l)*eV[l];
+        } else if (l<betau.n+betaf1.n) {
+            int l1 = l-betau.n;
+            fh1 = fh1 + betaAE(l)*eVf1[l1];
+        } else if (l<betau.n+betaf1.n+betaf2.n) {
+            int l1 = l-betau.n-betaf1.n;
+            fh2 = fh2 + betaAE(l)*eVf2[l1];
+        }
+    }
+
+
+
+
+    ///////
+
+    timeAEExpansion(tk,tO) = cpuI-clock();
+    ofstream filetimeAEExpansion("approx_K/timeAEExpansion"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+".txt");
+         filetimeAEExpansion << timeAEExpansion << endl;
+
+    //////////////////////////////////////////////////////////////////////////////////////
+
+
+
+    ///////////////////////////////////////////////////
+        // load true value
+        ///////////////////////////////////////////////////
+	VhObs wh1obsR, wh2obsR, wh1obsI, wh2obsI;
+
+
+
+	cout << NN << endl;
+
+	real[int] waveTrueA1Obs(2*wh1obsR.n);
+        real[int] waveTrueA2Obs(2*wh1obsR.n);
+        ifstream fileInR1("waveTrue/wave_"+NN+"_"+omega+"_1.txt");
+        fileInR1 >> waveTrueA1Obs;
+        ifstream fileInR2("waveTrue/wave_"+NN+"_"+omega+"_2.txt");
+        fileInR2 >> waveTrueA2Obs;
+
+
+	wh1obsR[] = waveTrueA1Obs(0:wh1obsR.n-1);
+	wh1obsI[] = waveTrueA1Obs(wh1obsR.n:2*wh1obsR.n-1);
+	wh2obsR[] = waveTrueA2Obs(0:wh1obsR.n-1);
+        wh2obsI[] = waveTrueA2Obs(wh1obsR.n:2*wh1obsR.n-1);
+
+
+        real[int] waveTrueA1(2*u00.n);
+        real[int] waveTrueA2(2*u00.n);
+
+
+	Vh wh1R,wh1I,wh2R,wh2I;
+	wh1R = wh1obsR;
+	wh1I = wh1obsI;
+	wh2R = wh2obsR;
+	wh2I = wh2obsI;
+
+
+//     plot(wh1R,wait=1);
+//     plot(wh1obsR,wait=1);
+//     plot(wh1I,wait=1);
+//     plot(wh1obsI,wait=1);
+//
+//     plot(wh2R,wait=1);
+//     plot(wh2obsR,wait=1);
+//     plot(wh2I,wait=1);
+//     plot(wh2obsI,wait=1);
+//
+
+	waveTrueA1(0:wh1R.n-1) = wh1R[];
+	waveTrueA1(wh1R.n:2*wh1R.n-1) = wh1I[];
+	waveTrueA2(0:wh1R.n-1) = wh2R[];
+	waveTrueA2(wh1R.n:2*wh1R.n-1) = wh2I[];
+
+
+        real[int] waveTrue1 = P*waveTrueA1;
+        real[int] waveTrue2 = P*waveTrueA2;
+
+
+
+
+    ///////////////////////////////////////////////////
+    /////////////////// Gauss Newton //////////////////
+    ///////////////////////////////////////////////////
+        real tol = 1e-1;
+        int maxIter = 10;
+        int iter = -1;
+
+        int nBeta = betaAE.n;
+        real[int] dFold(nBeta);
+        real[int] DbetaAEold(nBeta);
+        real duRel;
+        real dF0;
+
+        real alpha = 1;
+        real mu = 0.7;
+        real m0 = mu;
+
+//         betaAE = 0;
+
+        if (omega == 8){
+//             betaAE(0:betau.n-1) = 0;
+            betaAE = 0;
+        }
+        // betaAE = 0;
+//         betaAE(0:betau.n-1) = 0;
+        while (++iter<maxIter){
+
+
+
+            matrix B = createBoundaryMatrix(uh[]);
+            matrix K = createStiffnessMatrix(uh[]);
+            matrix A = createA(K,M,B,omega);
+
+
+//             plot(fh,wait=1);
+            cout << "************************************************"<<endl;
+            cout << "Omega = " << omega << "; Iter = " << iter << "; Mesh = "<< NN <<"; K = "<< KK <<endl;
+            cout << "************************************************"<<endl;
+
+
+
+            real[int] Ff1 = createLoadVector(fh1[]);
+            real[int] waveApproxA1 = waveSolver(A,Ff1);
+            real[int] waveApprox1 = P*waveApproxA1;
+
+            real[int] Ff2 = createLoadVector(fh2[]);
+            real[int] waveApproxA2 = waveSolver(A,Ff2);
+            real[int] waveApprox2 = P*waveApproxA2;
+
+//             Vh wh; wh[] = waveApproxA1(0:waveApproxA1.n/2-1);
+//             plot(wh,wait=1,fill=1);
+
+
+            real[int] wavediff1 = waveDiff(waveApprox1,waveTrue1);
+            real[int] wavediff2 = waveDiff(waveApprox2,waveTrue2);
+
+
+
+            ///////////////// CG - Method //////////////////////////////
+            matrix G1 =  createG(uh[], waveApproxA1,omega);
+            matrix G2 =  createG(uh[], waveApproxA2,omega);
+            real[int] dF = solveDF( A,G1, G2, P,  wavediff1,wavediff2, meV, meVf1, meVf2);
+//             cout << dF << endl;
+            real[int] mdF = -dF;
+            cout << "dF.l2 = " << dF.l2 << endl;
+            cout << "###################################################"<< endl;
+            cout << "Enter CG-METHOD"<< endl;
+            cout << "###################################################"<< endl;
+            cout << "mu = " << mu << endl;
+            real[int] DbetaAE(nBeta);
+            DbetaAE = cgMethod(A,G1, G2,  P, meV,meVf1, meVf2, mdF, DbetaAE,mu,betau, betaf1, betaf2);
+//             cout << DbetaAE << endl;
+            real test = DbetaAE'*dF;
+            if (test >= 0){
+                    cout << "Use Grad instead of CG" << endl;
+                    DbetaAE = mdF;
+            }
+            cout << "###################################################"<< endl;
+            cout << "Exit CG-METHOD"<< endl;
+            cout << "###################################################"<< endl;
+            /////////////////////////////////////////////////////////////
+
+            ///////////////////// upadate mu /////////////////////////////////
+            if (iter>0){
+                dFold = dF;
+                DbetaAEold = DbetaAE;
+
+                real muold = mu;
+                real mm = 0.9*mu^1.1;
+                mu = dF.l2/dF0; mu = mu^1.1; mu *=0.9;
+                if (mu>1){
+                    mu = m0;
+                }else if (mm>0.1){
+                        mu = max(mu,mm);
+                }
+            }
+            if (dF0 < dF.l2){
+                dF0 = dF.l2;
+            }
+            ////////////////////////////////////////////////////////////////////
+
+            /////////////////////// stepsize /////////////////////////////////
+            real F = solveF(wavediff1,wavediff2);
+            cout << "###################################################"<< endl;
+            cout << "Enter ARMIJO"<< endl;
+            cout << "###################################################"<< endl;
+            alpha = Armijo(u00,f001,f002, betaAE, DbetaAE, P, F, M, MM,MMf1,MMf2, waveTrue1, waveTrue2, dF,omega, betau, betaf1, betaf2);
+            cout << "###################################################"<< endl;
+            cout << "Exit ARMIJO"<< endl;
+            cout << "###################################################"<< endl;
+
+//             cout << betaAE << endl;
+
+
+	   if (alpha == 0){
+		cout << "Break because alpha = 0 " << endl;
+	        iter = 21;
+	   }
+
+
+            fh1[] = f001;
+            fh2[] = f002;
+            uh[] = u00;
+            //plot(fAE,wait=1);
+            //plot(uAE,wait=1);
+            betaAE = betaAE+alpha*DbetaAE;
+            for (int l = 0; l<betaAE.n; l++){
+                if (l<betau.n){
+                    uh  = uh + betaAE(l)*eV[l];
+                } else if (l<betau.n+betaf1.n) {
+                    int l1 = l-betau.n;
+                    fh1 = fh1 + betaAE(l)*eVf1[l1];
+                } else if (l<betau.n+betaf1.n+betaf2.n) {
+                    int l1 = l-betau.n-betaf1.n;
+                    fh2 = fh2 + betaAE(l)*eVf2[l1];
+                }
+            }
+
+
+            //plot(uh);
+
+            ////////////////////////////////////////////////////////////////////
+
+            /////////////////////// break condition /////////////////////////////////
+            cout << "outer tol = "<< dF.l2/dF0 << endl;
+            if (dF.l2/dF0 < tol){
+                break;
+            }
+            ////////////////////////////////////////////////////////////////////
+
+        }
+
+
+    //plot(fh2);
+
+
+
+//
+ //plot(fh);
+
+
+
+    timeAE(tk,tO) = cpuI-clock();
+
+ofstream filetimeAE("approx_K/timeAE"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+".txt");
+         filetimeAE << timeAE << endl;
+ofstream filewh1("approx_K/wave_"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+"_1.txt");
+         filewh1 << waveTrueA1 << endl;
+ofstream filewh2("approx_K/wave_"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+"_2.txt");
+         filewh2 << waveTrueA2 << endl;
+ofstream fileuh("approx_K/uh_"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+".txt");
+         fileuh << uh[] << endl;
+ofstream filefh1("approx_K/fh1_"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+".txt");
+         filefh1 << fh1[] << endl;
+ofstream filefh2("approx_K/fh2_"+KK+"_"+K1+"_"+K2+"_"+NN+"_"+omega+".txt");
+         filefh2 << fh2[] << endl;
+    tO++;
+
+
+}
+
+// save uh and fh
+
+ofstream fileuh("approx_K/uh_"+KK+"_"+K1+"_"+K2+"_"+NN+".txt");
+         fileuh << uh[] << endl;
+ofstream filefh1("approx_K/fh1_"+KK+"_"+K1+"_"+K2+"_"+NN+".txt");
+         filefh1 << fh1[] << endl;
+ofstream filefh2("approx_K/fh2_"+KK+"_"+K1+"_"+K2+"_"+NN+".txt");
+         filefh2 << fh2[] << endl;
+//      plot(uh,wait=1);
+//      plot(fh,wait=1);
+timeK(tk) = cpuK-clock();
+ofstream filetimeK("approx_K/timeK"+KK+"_"+K1+"_"+K2+"_"+NN+".txt");
+         filetimeK << timeK << endl;
+tk++;
+
+}
+
+
+
+
+ofstream filetime1("approx_K/timeK_"+K1+"_"+K2+"_"+NN+".txt");
+         filetime1 << timeK << endl;
+ofstream filetime2("approx_K/timeAE_"+K1+"_"+K2+"_"+NN+".txt");
+         filetime2 << timeAE << endl;
+ofstream filetime3("approx_K/timeAEExpansion_"+K1+"_"+K2+"_"+NN+".txt");
+         filetime3 << timeAEExpansion << endl;
+
+
+}
+
+
+}
+}
